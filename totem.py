@@ -12,11 +12,6 @@ import numpy as np
 from torch.autograd import Variable
 from datetime import datetime
 
-import sys
-from PyQt5.QtWidgets import  QWidget, QLabel, QApplication
-from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QImage, QPixmap
-
 import cv2
 
 cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
@@ -70,7 +65,7 @@ def update_screen():
         # [[416, 416, 3] => [416, 416, 3, 1]]
         f = np.expand_dims(f, axis=0)
         # [np_array -> tensor]
-        f = torch.Tensor(f)
+        f = torch.Tensor(f).to(device)
 
         # [tensor -> variable]
         f = Variable(f.type(Tensor))
@@ -96,75 +91,7 @@ def update_screen():
             y2 = yy2
         else:
             x1 = x2 = y1 = y2 = conf = cls_pred = 0
-        time.sleep(0.1)
-
-
-class Thread(QThread):
-    changePixmap = pyqtSignal(QImage)
-
-    def run(self):
-        global fps, frames
-        while True:
-            # frame extraction
-            _, org_frame = cap.read()
-            org_frame = rotate_bound(org_frame, 90)
-            t_frame = cv2.UMat.get(org_frame)
-
-            # Bounding box making and setting Bounding box title
-            if int(cls_pred) == 0:
-                # WITH_MASK
-                cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            else:
-                # WITHOUT_MASK
-                cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-            cv2.putText(org_frame, classes[int(cls_pred)] + ": %.2f" % conf, (x1, y1 + t_size[1]), cv2.FONT_HERSHEY_PLAIN, 1, [225, 255, 255], 2)
-
-            # CURRENT TIME SHOWING
-            now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
-
-            # FPS PRINTING
-            cv2.rectangle(org_frame, (0, 0), (175, 20), (0, 0, 0), -1)
-            cv2.putText(org_frame, current_time + " FPS : %3.2f" % fps, (0, t_size[1] + 2),
-                        cv2.FONT_HERSHEY_PLAIN, 1, [255, 255, 255], 1)
-            org_frame = cv2.UMat.get(org_frame)
-
-            frames += 1
-            fps = frames / (time.time() - start)            
-
-            h, w, ch = org_frame.shape
-            bytesPerLine = ch * w
-            convertToQtFormat = QImage(org_frame.data, w, h, bytesPerLine, QImage.Format_RGB888)
-            p = convertToQtFormat.scaled(480, 640, Qt.KeepAspectRatio)
-            self.changePixmap.emit(p)
-
-
-class App(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.title = 'PyQt5 Video'
-        self.left = 100
-        self.top = 100
-        self.width = 480
-        self.height = 640
-        self.initUI()
-
-    @pyqtSlot(QImage)
-    def setImage(self, image):
-        self.label.setPixmap(QPixmap.fromImage(image))
-
-    def initUI(self):
-        self.setWindowTitle(self.title)
-        self.setGeometry(self.left, self.top, self.width, self.height)
-        self.resize(1800, 1200)
-        # create a label
-        self.label = QLabel(self)
-        self.label.move(280, 120)
-        self.label.resize(640, 480)
-        th = Thread(self)
-        th.changePixmap.connect(self.setImage)
-        th.start()
-        self.show()
+        time.sleep(1)
 
 
 if __name__ == "__main__":
@@ -194,7 +121,7 @@ if __name__ == "__main__":
     if opt.weights_path.endswith(".weights"):
         model.load_darknet_weights(opt.weights_path)  # Load weights
     else:
-        model.load_state_dict(torch.load(opt.weights_path))  # Load checkpoints
+        model.load_state_dict(torch.load(opt.weights_path, map_location=device))  # Load checkpoints
 
     # Set in evaluation mode
     model.eval()
@@ -206,14 +133,14 @@ if __name__ == "__main__":
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
     # camara capture
-    cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=720, height=480, format=(string)NV12, framerate=(fraction)20/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink' , cv2.CAP_GSTREAMER)
+    cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=(string)NV12, framerate=(fraction)20/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink' , cv2.CAP_GSTREAMER)
     assert cap.isOpened(), 'Cannot capture source'
 
     print("\nPerforming object detection:")
 
     # Video feed dimensions
     _, frame = cap.read()
-    frame = rotate_bound(frame, 90)
+    frame = rotate_bound(frame, 270)
     t_frame = cv2.UMat.get(frame)
     v_height, v_width = t_frame.shape[:2]
 
@@ -237,10 +164,40 @@ if __name__ == "__main__":
     th.setDaemon(True)
     th.start()
 
-    app = QApplication(sys.argv)
-    ex = App()
-    sys.exit(app.exec_()
+    while True:
+        # frame extraction
+        _, org_frame = cap.read()
+        org_frame = rotate_bound(org_frame, 270)
+        t_frame = cv2.UMat.get(org_frame)
 
-    #cap.release()
-    #cv2.destroyAllWindows()
+        # Bounding box making and setting Bounding box title
+        if int(cls_pred) == 0:
+            # WITH_MASK
+            cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        else:
+            # WITHOUT_MASK
+            cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+        cv2.putText(org_frame, classes[int(cls_pred)] + ": %.2f" % conf, (x1, y1 + t_size[1]), cv2.FONT_HERSHEY_PLAIN, 1, [225, 255, 255], 2)
+
+        # CURRENT TIME SHOWING
+        now = datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+
+        # FPS PRINTING
+        cv2.rectangle(org_frame, (0, 0), (175, 20), (0, 0, 0), -1)
+        cv2.putText(org_frame, current_time + " FPS : %3.2f" % fps, (0, t_size[1] + 2),
+                        cv2.FONT_HERSHEY_PLAIN, 1, [255, 255, 255], 1)
+        #cv2.resize(org_frame, (1080, 1600))
+        org_frame = cv2.UMat.get(org_frame)
+
+        frames += 1
+        fps = frames / (time.time() - start)            
+
+        cv2.imshow('frame', org_frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            stop = True
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
 
