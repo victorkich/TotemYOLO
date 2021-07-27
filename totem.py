@@ -11,11 +11,13 @@ import threading
 import numpy as np
 from torch.autograd import Variable
 from datetime import datetime
+from yoloface import face_analysis
 
 import cv2
 
 cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
 cv2.setWindowProperty('frame', cv2.WND_PROP_FULLSCREEN-5, cv2.WINDOW_FULLSCREEN)
+face = face_analysis()
 
 
 def rotate_bound(image, angle):
@@ -160,15 +162,18 @@ if __name__ == "__main__":
     frames = fps = 0
     start = time.time()
     x1 = x2 = y1 = y2 = conf = cls_pred = 0
-    th = threading.Thread(target = update_screen)
-    th.setDaemon(True)
-    th.start()
+    #th = threading.Thread(target=update_screen)
+    #th.setDaemon(True)
+    #th.start()
 
     while True:
         # frame extraction
         _, org_frame = cap.read()
         org_frame = rotate_bound(org_frame, 270)
         t_frame = cv2.UMat.get(org_frame)
+
+        _, box, conf = face.face_detection(frame_arr=t_frame, frame_status=True, model='tiny')
+        org_frame = face.show_output(t_frame, box, frame_status=True)
 
         # Bounding box making and setting Bounding box title
         if int(cls_pred) == 0:
