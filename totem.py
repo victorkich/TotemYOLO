@@ -1,23 +1,78 @@
-from __future__ import division
-
-from models import Darknet
-from utils.utils import load_classes, non_max_suppression_output
-
-import argparse
-
-import time
-import torch
-import threading
-import numpy as np
-from torch.autograd import Variable
-from datetime import datetime
-from yoloface import face_analysis
-
 import cv2
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from tensorflow.keras.preprocessing.image import img_to_array
+from tensorflow.keras.models import load_model
+from datetime import datetime
+import numpy as np
+import threading
+import time
+import os
 
-cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
-cv2.setWindowProperty('frame', cv2.WND_PROP_FULLSCREEN-5, cv2.WINDOW_FULLSCREEN)
-face = face_analysis()
+cv2.namedWindow('TotemUFSM', cv2.WND_PROP_FULLSCREEN)
+cv2.setWindowProperty('TotemUFSM', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+
+def detect_and_predict_mask(frame, faceNet, maskNet):
+    # grab the dimensions of the frame and then construct a blob
+    # from it
+    (h, w) = frame.shape[:2]
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
+
+    # pass the blob through the network and obtain the face detections
+    faceNet.setInput(blob)
+    detections = faceNet.forward()
+
+    # initialize our list of faces, their corresponding locations,
+    # and the list of predictions from our face mask network
+    faces = []
+    locs = []
+    preds = []
+
+    # loop over the detections
+    for i in range(0, detections.shape[2]):
+        # extract the confidence (i.e., probability) associated with
+	# the detection
+        confidence = detections[0, 0, i, 2]
+
+        # filter out weak detections by ensuring the confidence is
+        # greater than the minimum confidence
+        if confidence > 0.7:
+            # compute the (x, y)-coordinates of the bounding box for
+            # the object
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+
+            # ensure the bounding boxes fall within the dimensions of
+            # the frame
+            (startX, startY) = (max(0, startX), max(0, startY))
+            (endX, endY) = (min(w - 1, endX), min(h - 1, endY))
+
+            # extract the face ROI, convert it from BGR to RGB channel
+            # ordering, resize it to 224x224, and preprocess it
+            
+            face = frame[startY:endY, startX:endX]
+            if not face.size == 0:
+                face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+                face = cv2.resize(face, (224, 224))
+                face = img_to_array(face)
+                face = preprocess_input(face)
+
+                # add the face and bounding boxes to their respective
+                # lists
+                faces.append(face)
+                locs.append((startX, startY, endX, endY))
+
+    # only make a predictions if at least one face was detected
+    if len(faces) > 0:
+        # for faster inference we'll make batch predictions on *all*
+        # faces at the same time rather than one-by-one predictions
+        # in the above `for` loop
+        faces = np.array(faces, dtype="float32")
+        preds = maskNet.predict(faces, batch_size=32)
+
+    # return a 2-tuple of the face locations and their corresponding
+    # locations
+    return (locs, preds)
 
 
 def rotate_bound(image, angle):
@@ -43,166 +98,116 @@ def rotate_bound(image, angle):
 
 
 stop = False
-
-
-def update_screen():
-    global x1, x2, y1, y2, conf, cls_pred
+def compute_bound():
+    global locs, preds
     while not stop:
-        # Black image
-        f = np.zeros((x, y, 3), np.uint8)
-
-        f[start_new_i_height: (start_new_i_height + v_height),
-        start_new_i_width: (start_new_i_width + v_width)] = t_frame
-
-        # resizing to [416x 416]
-        f = cv2.UMat(f)
-        f = cv2.resize(f, (opt.frame_size, opt.frame_size))
-        # [BGR -> RGB]
-        f = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
-        f = cv2.UMat.get(f)
-        # [[0...255] -> [0...1]]
-        f = np.asarray(f) / 255
-        # [[3, 416, 416] -> [416, 416, 3]]
-        f = np.transpose(f, [2, 0, 1])
-        # [[416, 416, 3] => [416, 416, 3, 1]]
-        f = np.expand_dims(f, axis=0)
-        # [np_array -> tensor]
-        f = torch.Tensor(f).to(device)
-
-        # [tensor -> variable]
-        f = Variable(f.type(Tensor))
-
-        # Get detections
-        with torch.no_grad():
-            detections = model(f)
-        detections = non_max_suppression_output(detections, opt.conf_thres, opt.nms_thres)
-
-        # For each detection in detections
-        detection = detections[0]
-        if detection is not None:
-            for xx1, yy1, xx2, yy2, conf, cls_conf, cls_pred in detection:
-                # Accommodate bounding box in original frame
-                xx1 = int(xx1 * mul_constant - start_new_i_width)
-                yy1 = int(yy1 * mul_constant - start_new_i_height)
-                xx2 = int(xx2 * mul_constant - start_new_i_width)
-                yy2 = int(yy2 * mul_constant - start_new_i_height)
-            #_, _, _, _, conf, cls_conf, cls_pred = detection
-            x1 = xx1
-            y1 = yy1
-            x2 = xx2
-            y2 = yy2
-        else:
-            x1 = x2 = y1 = y2 = conf = cls_pred = 0
-        time.sleep(1)
+        if ret:
+            # detect faces in the frame and determine if they are wearing a face mask or not
+            (locs, preds) = detect_and_predict_mask(compute_frame, faceNet, maskNet)       
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_def", type=str, default="config/yolov3_mask.cfg", help="path to model definition file")
-    parser.add_argument("--weights_path", type=str, default="checkpoints/yolov3_ckpt_35.pth", help="path to weights file")
-    parser.add_argument("--class_path", type=str, default="data/mask_dataset.names", help="path to class label file")
-    parser.add_argument("--conf_thres", type=float, default=0.9, help="object confidence threshold")
-    parser.add_argument("--nms_thres", type=float, default=0.4, help="iou thresshold for non-maximum suppression")
-    parser.add_argument("--frame_size", type=int, default=416, help="size of each image dimension")
+def draw_frame(image, c):
+    ws = image.shape[0]
+    hs = image.shape[1]
+    image = cv2.UMat(image)
+    image = cv2.line(image, (int(hs * 0.05), int(ws * 0.05)), (int(hs * 0.05), int(ws * 0.2)), c, 9)
+    image = cv2.line(image, (int(hs * 0.05), int(ws * 0.05)), (int(hs * 0.2), int(ws * 0.05)), c, 9)
+    image = cv2.line(image, (int(hs * 0.8), int(ws * 0.05)), (int(hs * 0.95), int(ws * 0.05)), c, 9)
+    image = cv2.line(image, (int(hs * 0.95), int(ws * 0.05)), (int(hs * 0.95), int(ws * 0.2)), c, 9)
+    image = cv2.line(image, (int(hs * 0.05), int(ws * 0.95)), (int(hs * 0.2), int(ws * 0.95)), c, 9)
+    image = cv2.line(image, (int(hs * 0.05), int(ws * 0.8)), (int(hs * 0.05), int(ws * 0.95)), c, 9)
+    image = cv2.line(image, (int(hs * 0.8), int(ws * 0.95)), (int(hs * 0.95), int(ws * 0.95)), c, 9)
+    image = cv2.line(image, (int(hs * 0.95), int(ws * 0.8)), (int(hs * 0.95), int(ws * 0.95)), c, 9)
+    return image
 
-    opt = parser.parse_args()
-    print(opt)
 
-    if torch.cuda.is_available():
-        print("Running on GPU")
-    else:
-        print("Running on CPU")
+# load our serialized face detector model from disk
+print("[INFO] loading face detector model...")
+prototxtPath = os.path.sep.join(["face_detector", "deploy.prototxt"])
+weightsPath = os.path.sep.join(["face_detector", "res10_300x300_ssd_iter_140000.caffemodel"])
+faceNet = cv2.dnn.readNet(prototxtPath, weightsPath)
 
-    # checking for GPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# load the face mask detector model from disk
+print("[INFO] loading face mask detector model...")
+maskNet = load_model("mask.model")
 
-    # Set up model
-    model = Darknet(opt.model_def, img_size=opt.frame_size).to(device)
+# camara capture
+cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=(string)NV12, framerate=(fraction)10/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink' , cv2.CAP_GSTREAMER)
+assert cap.isOpened(), 'Cannot capture source'
 
-    # loading weights
-    if opt.weights_path.endswith(".weights"):
-        model.load_darknet_weights(opt.weights_path)  # Load weights
-    else:
-        model.load_state_dict(torch.load(opt.weights_path, map_location=device))  # Load checkpoints
+ret, frame = cap.read()
+frame = rotate_bound(frame, 270)
+compute_frame = cv2.UMat.get(frame)
 
-    # Set in evaluation mode
-    model.eval()
+# for text in output
+t_size = cv2.getTextSize(" ", cv2.FONT_HERSHEY_PLAIN, 1, 1)[0]
+frames = fps = count = 0
+locs = list()
+preds = list()
+c_fps = list()
 
-    # Extracts class labels from file
-    classes = load_classes(opt.class_path)
+cb = threading.Thread(target=compute_bound)
+cb.setDaemon(True)
+cb.start()
 
-    # ckecking for GPU for Tensor
-    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+start = time.time()
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        pass
 
-    # camara capture
-    cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=(string)NV12, framerate=(fraction)20/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink' , cv2.CAP_GSTREAMER)
-    assert cap.isOpened(), 'Cannot capture source'
-
-    print("\nPerforming object detection:")
-
-    # Video feed dimensions
-    _, frame = cap.read()
     frame = rotate_bound(frame, 270)
-    t_frame = cv2.UMat.get(frame)
-    v_height, v_width = t_frame.shape[:2]
+    compute_frame = cv2.UMat.get(frame)
 
-    # For a black image
-    x = y = v_height if v_height > v_width else v_width
+    # loop over the detected face locations and their corresponding locations
+    if locs:
+        big_w = big_h = 0
+        for (box, pred) in zip(locs, preds):
+           # unpack the bounding box and predictions
+           (s_x, s_y, e_x, e_y) = box
+           if big_h < e_y - s_y and big_w < e_x - s_x:
+               (startX, startY, endX, endY) = box
+               (mask, withoutMask) = pred
+               big_h = e_y - s_y
+               big_w = e_x - s_x
 
-    # Putting original image into black image
-    start_new_i_height = int((y - v_height) / 2)
-    start_new_i_width = int((x - v_width) / 2)
+        # clamp coordinates that are outside of the image
+        startX, startY = max(startX, 0), max(startY, 0)
 
-    # For accommodate results in original frame
-    mul_constant = x / opt.frame_size
+        # determine the class label and color we'll use to draw the bounding box and text
+        label = "Com Mascara" if mask > withoutMask else "Sem Mascara"
+        color = (0, 255, 0) if label == "Com Mascara" else (0, 0, 255)
 
-    # for text in output
-    t_size = cv2.getTextSize(" ", cv2.FONT_HERSHEY_PLAIN, 1, 1)[0]
+        # include the probability in the label
+        label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
 
-    frames = fps = 0
+        # display the label and bounding box rectangle on the output frame
+        cv2.putText(frame, label, (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2), cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
+
+        # draw the bounds of the image
+        frame = cv2.UMat.get(frame)
+        frame = draw_frame(frame, color)
+
+    # CURRENT TIME SHOWING
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+
+    # FPS PRINTING
+    cv2.rectangle(frame, (0, 0), (175, 20), (0, 0, 0), -1)
+    c_fps.append(1 / (time.time() - start))
     start = time.time()
-    x1 = x2 = y1 = y2 = conf = cls_pred = 0
-    #th = threading.Thread(target=update_screen)
-    #th.setDaemon(True)
-    #th.start()
+    if len(c_fps) > 60:
+        c_fps.pop(0)
+    fps = sum(c_fps) / len(c_fps)
+    cv2.putText(frame, current_time + " FPS : %3.2f" % fps, (0, t_size[1] + 2), cv2.FONT_HERSHEY_PLAIN, 1, [255, 255, 255], 1)  
 
-    while True:
-        # frame extraction
-        _, org_frame = cap.read()
-        org_frame = rotate_bound(org_frame, 270)
-        t_frame = cv2.UMat.get(org_frame)
+    # show the output frame
+    cv2.imshow("TotemUFSM", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        stop = True
+        break
 
-        _, box, conf = face.face_detection(frame_arr=t_frame, frame_status=True, model='tiny')
-        org_frame = face.show_output(t_frame, box, frame_status=True)
-
-        # Bounding box making and setting Bounding box title
-        if int(cls_pred) == 0:
-            # WITH_MASK
-            cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        else:
-            # WITHOUT_MASK
-            cv2.rectangle(org_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-        cv2.putText(org_frame, classes[int(cls_pred)] + ": %.2f" % conf, (x1, y1 + t_size[1]), cv2.FONT_HERSHEY_PLAIN, 1, [225, 255, 255], 2)
-
-        # CURRENT TIME SHOWING
-        now = datetime.now()
-        current_time = now.strftime("%H:%M:%S")
-
-        # FPS PRINTING
-        cv2.rectangle(org_frame, (0, 0), (175, 20), (0, 0, 0), -1)
-        cv2.putText(org_frame, current_time + " FPS : %3.2f" % fps, (0, t_size[1] + 2),
-                        cv2.FONT_HERSHEY_PLAIN, 1, [255, 255, 255], 1)
-        #cv2.resize(org_frame, (1080, 1600))
-        org_frame = cv2.UMat.get(org_frame)
-
-        frames += 1
-        fps = frames / (time.time() - start)            
-
-        cv2.imshow('frame', org_frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            stop = True
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
+cap.release()
+cv2.destroyAllWindows()
+del faceNet
+del maskNet
