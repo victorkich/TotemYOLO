@@ -34,6 +34,13 @@ git clone https://github.com/victorkich/TotemUFSM/
 pip3 install -r requirements.txt
 ```
 
+<a>If you want the program run at the system startup, use the following code to setup the startup settings using pm2:</a>
+</p>
+
+```shell
+sudo ./setup.sh
+```
+
 <p align="justify"> 
  <a>For test in your own computer, just type the following line of code:</a>
 </p>
