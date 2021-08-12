@@ -55,12 +55,6 @@ python3 totem.py
   <img src="media/example.gif" alt="TotemUFSM"/>
 </p>  
 
-## References
-<p align="justify"> 
-  This project is inspired by the following GitHub repository:
-  <a href="https://github.com/JadHADDAD92/covid-mask-detector">JadHADDAD92</a>
-</p>
-
 <p align="center"> 
   <i>If you liked this repository, please don't forget to starred it!</i>
   <img src="https://img.shields.io/github/stars/victorkich/TotemUFSM?style=social"/>
