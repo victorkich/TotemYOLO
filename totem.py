@@ -157,7 +157,7 @@ assert cap.isOpened(), 'Cannot capture source'
 
 ret, frame = cap.read()
 frame_shape = frame.shape
-frame = rotate_bound(frame, 270)
+frame = rotate_bound(frame, 90)
 compute_frame = cv2.UMat.get(frame)
 
 # for text in output
@@ -194,7 +194,7 @@ while True:
                 pass
 
             color = (0, 0, 0)
-            frame = rotate_bound(frame, 270)
+            frame = rotate_bound(frame, 90)
             compute_frame = cv2.UMat.get(frame)
 
             # loop over the detected face locations and their corresponding locations
