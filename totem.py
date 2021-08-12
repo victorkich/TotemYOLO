@@ -221,7 +221,7 @@ while True:
                     if not post_delay:
                         # opening the gate
                         if label == "Com Mascara" and gate:
-                            # arduino.write(bytes(0, 'utf-8'))
+                            arduino.write(bytes(0, 'utf-8'))
                             static_frame = True
                             static_frame_time = time.time()
                         elif label == "Sem Mascara" and gate:
