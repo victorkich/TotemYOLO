@@ -115,8 +115,7 @@ def gate_control():
                 gate = True
             time.sleep(0.1)
     except:
-        # os.system("reboot")
-        pass
+        os.system("reboot")
 
 
 def draw_frame(image, c):
@@ -139,7 +138,7 @@ stop = False
 gate = True  # False seams it is in opening process, True for already closed gate
 
 # start arduino connection
-# arduino = serial.Serial(port='USB0', baudrate=115200, timeout=0.1)
+arduino = serial.Serial(port='USB0', baudrate=115200, timeout=0.1)
 
 # load our serialized face detector model from disk
 print("[INFO] loading face detector model...")
@@ -152,8 +151,8 @@ print("[INFO] loading face mask detector model...")
 maskNet = load_model("mask.model")
 
 # camara capture
-# cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=(string)NV12, framerate=(fraction)10/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink', cv2.CAP_GSTREAMER)
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, format=(string)NV12, framerate=(fraction)10/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink', cv2.CAP_GSTREAMER)
+#cap = cv2.VideoCapture(0)
 assert cap.isOpened(), 'Cannot capture source'
 
 ret, frame = cap.read()
@@ -177,9 +176,9 @@ cb = threading.Thread(target=compute_bound)
 cb.setDaemon(True)
 cb.start()
 
-#gate_thread = threading.Thread(target=gate_control)
-#gate_thread.setDaemon(True)
-#gate_thread.start()
+gate_thread = threading.Thread(target=gate_control)
+gate_thread.setDaemon(True)
+gate_thread.start()
 
 start = time.time()
 while True:
@@ -265,8 +264,7 @@ while True:
             stop = True
             break
     except:
-        # os.system("reboot")
-        pass
+        os.system("reboot")
 
 cap.release()
 cv2.destroyAllWindows()
