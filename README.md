@@ -1,4 +1,4 @@
-<h1 align="center">TotemUFSM</h1>
+<h1 align="center">TotemYOLO</h1>
 <h3 align="center">Vision system for covid control totems inside UFSM.</h3>
 
 <p align="center"> 
