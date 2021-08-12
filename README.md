@@ -13,7 +13,7 @@
 
 ## Objective
 <p align="justify"> 
-  <a>Implementation of vision system for covid-19 totems control through real-time facial mask detection. This approach seeks to work effectively on low-cost hardware, such as the Raspberry PI 4 model b, 4gb version.</a>  
+  <a>Implementation of vision system for covid-19 totems control through real-time facial mask detection. This approach seeks to work effectively on low-cost hardware, such as the Jetson Nano B01, 4gb RAM memory version.</a>
 </p>
   
 
